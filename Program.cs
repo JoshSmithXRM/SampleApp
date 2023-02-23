@@ -1,35 +1,50 @@
-﻿using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using System;
+using System.Linq;
 
-class Program
+namespace SampleApp
 {
-    static async Task Main(string[] args)
+    class Program
     {
-        var builder = new HostBuilder()
-            .ConfigureServices((hostContext, services) =>
-            {
-                // Register services
-                services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
-                    .SetBasePath(Directory.GetCurrentDirectory())
-                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                    .Build());
-                services.AddHttpClient<IApiService, ApiService>();
-                services.AddSingleton<IDatabaseService, DatabaseService>();
-                services.AddTransient<DataCoordinator>();
-
-                // Register the application entry point
-                services.AddTransient<App>();
-            });
-
-        var host = builder.Build();
-        using (var serviceScope = host.Services.CreateScope())
+        static void Main(string[] args)
         {
-            var serviceProvider = serviceScope.ServiceProvider;
-            var app = serviceProvider.GetRequiredService<App>();
-            await app.RunAsync();
-        }
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .Build();
 
-        Console.WriteLine("Program completed, exiting.");
+            var optionsBuilder = new DbContextOptionsBuilder<SampleDbContext>();
+            optionsBuilder.UseSqlServer(configuration.GetValue<string>("AppSettings:ConnectionString"));
+
+            using (var dbContext = new SampleDbContext(optionsBuilder.Options))
+            {
+                // Add a new record to the database
+                var newRecord = new Data
+                {
+                    Value = "Some Value"
+                };
+                dbContext.Data.Add(newRecord);
+                dbContext.SaveChanges();
+
+                // Query the database to verify that the record was inserted
+                var query = from d in dbContext.Data
+                            where d.Id == newRecord.Id
+                            select d;
+
+                var result = query.FirstOrDefault();
+
+                if (result != null)
+                {
+                    Console.WriteLine($"Record added to database: {result.Id}, {result.Value}");
+                }
+                else
+                {
+                    Console.WriteLine("Failed to add record to database");
+                }
+
+                var totalRecordCount = dbContext.Data.Count();
+                Console.WriteLine($"There are {totalRecordCount} records in the database.");
+            }
+        }
     }
 }
